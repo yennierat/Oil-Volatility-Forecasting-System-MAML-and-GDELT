@@ -1,0 +1,14 @@
+# Data folder
+data/
+
+# Databases and logs in live_deployment
+code/live_deployment/*.db
+code/live_deployment/*.log
+code/live_deployment/*_log.csv
+
+# Virtual environment
+.venv/
+
+# Python
+__pycache__/
+*.pyc
