@@ -6,6 +6,7 @@ Run: python get_seed_data.py
 """
 
 from gdelt_pipeline import main as run_pipeline, PipelineConfig
+from pathlib import Path
 import pandas as pd
 import numpy as np
 
@@ -15,13 +16,17 @@ print("Step 1: Fetching GDELT data March 17-23 2026")
 print("=" * 60)
 
 cfg = PipelineConfig(
-    start_date     = "2026-03-17",
-    end_date       = "2026-03-23",
-    output_dir     = "seed_output",
-    checkpoint_dir = "seed_output/checkpoints",
-    final_output   = "seed_output/political_events_gdelt.csv",
-    sp500_output   = "seed_output/sp500_returns.csv",
-    log_file       = "seed_output/pipeline.log",
+    start_date       = "2026-03-17",
+    end_date         = "2026-03-23",
+    output_dir       = "seed_output",
+    checkpoint_dir   = "seed_output/checkpoints",
+    final_output     = "seed_output/political_events_gdelt.csv",
+    sp500_output     = "seed_output/sp500_returns.csv",
+    log_file         = "seed_output/pipeline.log",
+    # Keep the seed-script's split datasets out of ../data/ so we don't
+    # overwrite the full-range training files.
+    dataset_daily    = "seed_output/political_events_gdelt_next_day_only.csv",
+    dataset_intraday = "seed_output/political_events_gdelt_with_intraday.csv",
 )
 
 run_pipeline(cfg)
@@ -202,7 +207,8 @@ FEATURE_COLS = [
 ]
 
 seed_clean = seed.dropna(subset=FEATURE_COLS + ['oil_fwd_rvol_4h'])
-output_path = "dataset_maml_march1724.csv"
+Path("../data").mkdir(parents=True, exist_ok=True)
+output_path = "../data/seed_v1.csv"
 seed_clean.to_csv(output_path, index=False)
 
 print("\n" + "=" * 60)

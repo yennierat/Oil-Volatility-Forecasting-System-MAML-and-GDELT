@@ -1,6 +1,6 @@
 """
 Scheduler — V1 (15 features)
-Background prediction loop. Triggers a prediction every 30 min during OVX hours,
+Background prediction loop. Triggers a prediction every 1 hour during OVX hours,
 checks for resolved actuals every 5 min. Writes to predictions.db.
 
 Run from the live_deployment/ folder:
@@ -10,6 +10,8 @@ Run from the live_deployment/ folder:
 import time
 import sqlite3
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 import numpy as np
 import torch
 import torch.nn as nn
@@ -20,6 +22,25 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import yfinance as yf
 from copy import deepcopy
 from datetime import datetime, timedelta
+
+
+# Logging setup: rotating file (10 MB × 5) + console mirror.
+# `*.log` files are .gitignored. Reset any prior handlers so re-imports
+# (e.g. under pytest) don't stack duplicate output.
+logger = logging.getLogger("scheduler_v1")
+logger.setLevel(logging.INFO)
+logger.propagate = False
+if not logger.handlers:
+    _fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    _fh = RotatingFileHandler("scheduler_v1.log", maxBytes=10_000_000, backupCount=5)
+    _fh.setFormatter(_fmt)
+    _ch = logging.StreamHandler()
+    _ch.setFormatter(_fmt)
+    logger.addHandler(_fh)
+    logger.addHandler(_ch)
 
 # Model definition (matches v1 training architecture)
 class OilVolatilityMLP(nn.Module):
@@ -52,7 +73,7 @@ plain_mlp  = OilVolatilityMLP()
 plain_mlp.load_state_dict(
     torch.load('../../models/v1/mlp_pretrained.pth', map_location='cpu'))
 plain_mlp.eval()
-print("Models loaded. Scheduler running.")
+logger.info("Models loaded. Scheduler running.")
 
 
 # Database helpers
@@ -111,7 +132,7 @@ def update_actuals():
     conn.commit()
     conn.close()
     if updated:
-        print(f"  Updated {updated} actuals")
+        logger.info("Updated %d actuals", updated)
 
 def get_support_set():
     conn = sqlite3.connect(DB_PATH)
@@ -144,7 +165,7 @@ def should_predict():
     if row is None:
         return True
     last = datetime.fromisoformat(str(row[0]))
-    return (datetime.utcnow() - last).total_seconds() > 1800
+    return (datetime.utcnow() - last).total_seconds() > 3600
 
 
 def get_live_ovx():
@@ -156,7 +177,7 @@ def get_live_ovx():
         if ovx and ovx > 0:
             return float(ovx)
     except Exception as e:
-        print(f"OVX spot fetch failed: {e}")
+        logger.warning("OVX spot fetch failed: %s", e)
     return None
 
 
@@ -184,7 +205,7 @@ def fetch_market():
                 if len(s) > 0:
                     data[col] = s
         except Exception as e:
-            print(f"  FAILED {ticker}: {e}")
+            logger.warning("FAILED %s: %s", ticker, e)
 
     if not data:
         return None
@@ -210,22 +231,25 @@ def fetch_market():
 
     if latest.isna().any():
         missing = latest[latest.isna()].index.tolist()
-        print(f"  NaN in latest row: {missing} -- using ffill")
+        logger.warning("NaN in latest row: %s -- using ffill", missing)
         market = market.ffill()
         latest = market.iloc[-1]
 
     if latest.isna().any():
-        print("  Still NaN after ffill -- skipping")
+        logger.warning("Still NaN after ffill -- skipping")
         return None
 
     # Override OVX with live spot price
     live_ovx = get_live_ovx()
     if live_ovx:
         latest['ovx_close'] = live_ovx
-        print(f"  Live OVX spot: {live_ovx:.2f}")
+        logger.info("Live OVX spot: %.2f", live_ovx)
 
-    print(f"  Latest row date: {market.index[-1].date()}  "
-          f"OVX={latest.get('ovx_close', 'N/A'):.1f}")
+    logger.info(
+        "Latest row date: %s  OVX=%.1f",
+        market.index[-1].date(),
+        latest.get('ovx_close', float('nan')),
+    )
     return latest.to_dict()
 
 # Exact copies from training pipeline (must match what model was trained on)
@@ -371,7 +395,7 @@ def fetch_gdelt():
             'mentions_sum'    : float(men_vals.sum()),
         }
     except Exception as e:
-        print(f"GDELT raw fetch error: {e}")
+        logger.warning("GDELT raw fetch error: %s -- using fallback", e)
         return GDELT_FALLBACK
 
 def compute_actual_vol(pred_utc):
@@ -403,11 +427,11 @@ def compute_actual_vol(pred_utc):
 
 # Prediction
 def make_prediction():
-    print(f"\n[{datetime.utcnow().strftime('%H:%M:%S')} UTC] Making prediction...")
+    logger.info("Making prediction...")
 
     market = fetch_market()
     if market is None:
-        print("  Market data unavailable — skipping")
+        logger.warning("Market data unavailable - skipping")
         return
 
     gdelt = fetch_gdelt()
@@ -431,7 +455,7 @@ def make_prediction():
     ]], dtype=np.float32)
 
     if np.isnan(raw_X).any():
-        print("  NaN in features — skipping")
+        logger.warning("NaN in features - skipping")
         return
 
     X_tensor = torch.tensor(
@@ -488,9 +512,10 @@ def make_prediction():
         gdelt_context = gdelt_context
     )
 
-    print(f"  MAML: {maml_pred:.4f}  MLP: {mlp_pred:.4f}  "
-          f"OVX: {market.get('ovx_close',0):.1f}  "
-          f"Support: {n_support} examples")
+    logger.info(
+        "MAML: %.4f  MLP: %.4f  OVX: %.1f  Support: %d examples",
+        maml_pred, mlp_pred, market.get('ovx_close', 0), n_support,
+    )
 
 
 # Market hours check
@@ -518,20 +543,18 @@ def is_ovx_calculating() -> bool:
 import pandas as pd
 
 init_db()
-print("Database ready. Checking every 5 minutes.")
-print("Predictions every 30 min during market hours. Actuals checked each cycle.")
+logger.info("Database ready. Checking every 5 minutes.")
+logger.info("Predictions every 1 hour during market hours. Actuals checked each cycle.")
 
 while True:
     try:
         update_actuals()
         if not is_ovx_calculating():
-            print(f"[{datetime.utcnow().strftime('%H:%M:%S')} UTC] "
-                  f"US market closed -- OVX not updating, skipping prediction")
+            logger.debug("US market closed -- OVX not updating, skipping prediction")
         elif not should_predict():
-            print(f"[{datetime.utcnow().strftime('%H:%M:%S')} UTC] "
-                  f"Next prediction not due yet")
+            logger.debug("Next prediction not due yet")
         else:
             make_prediction()
-    except Exception as e:
-        print(f"Error: {e}")
+    except Exception:
+        logger.exception("Unhandled error in main loop")
     time.sleep(300)   # check every 5 minutes

@@ -29,22 +29,24 @@ code/                       Offline ML pipeline (training + evaluation)
   live_deployment/          Live prediction system
     app_v1.py                  v1 Streamlit dashboard
     app_v2.py                  v2 Streamlit dashboard
-    scheduler_v1.py            v1 background prediction scheduler (30-min cycle)
-    scheduler_v2.py            v2 background prediction scheduler (30-min cycle)
+    scheduler_v1.py            v1 background prediction scheduler (1-hour cycle)
+    scheduler_v2.py            v2 background prediction scheduler (1-hour cycle)
     NLP_sentiment.py           FinBERT-based headline → feature bridge
     predictions.db             v1 logged predictions (SQLite)
     predictions_v2.db          v2 logged predictions (SQLite)
     predictions_log.csv        Older CSV log (legacy)
+    scheduler_v1.log           v1 scheduler runtime log (auto-rotated, gitignored)
+    scheduler_v2.log           v2 scheduler runtime log (auto-rotated, gitignored)
 
-data/                       Pre-built input CSVs
-  dataset_daily.csv               Raw daily political events
-  dataset_intraday.csv            Raw intraday political events
-  dataset_maml_daily.csv          v1 MLP pretraining dataset
-  dataset_maml_intraday.csv       v1 MAML training dataset
-  dataset_maml_daily_v2.csv       v2 MLP pretraining dataset
-  dataset_maml_intraday_v2.csv    v2 MAML training dataset
-  seed_v1.csv                     v1 seed for live MAML support set
-  seed_v2.csv                     v2 seed for live MAML support set
+data/                       Generated CSVs (gitignored -- rebuild via offline pipeline)
+  dataset_daily.csv               Raw daily political events       [via gdelt_pipeline.py]
+  dataset_intraday.csv            Raw intraday political events    [via gdelt_pipeline.py]
+  dataset_maml_daily.csv          v1 MLP pretraining dataset       [via build_maml_dataset_v1.py]
+  dataset_maml_intraday.csv       v1 MAML training dataset         [via build_maml_dataset_v1.py]
+  dataset_maml_daily_v2.csv       v2 MLP pretraining dataset       [via build_maml_dataset_v2.py]
+  dataset_maml_intraday_v2.csv    v2 MAML training dataset         [via build_maml_dataset_v2.py]
+  seed_v1.csv                     v1 seed for live MAML support    [via get_seed_data.py]
+  seed_v2.csv                     v2 seed for live MAML support    [via get_seed_data_v2.py]
 
 models/                     Pre-trained model artifacts
   v1/
@@ -119,7 +121,7 @@ Streamlit dashboards (interactive UI for live predictions):
    streamlit run app_v1.py
    streamlit run app_v2.py
 
-Background prediction schedulers (auto-prediction every 30 min during OVX hours):
+Background prediction schedulers (auto-prediction every 1 hour during OVX hours):
 
    python scheduler_v1.py
    python scheduler_v2.py
@@ -127,6 +129,18 @@ Background prediction schedulers (auto-prediction every 30 min during OVX hours)
 Both schedulers and dashboards write to predictions.db and predictions_v2.db
 respectively. The included .db files contain previously logged predictions for
 inspection; they will be appended to (or created if deleted) on the next run.
+
+Each scheduler also writes to a rotating log file (scheduler_v1.log /
+scheduler_v2.log) in the same folder. Files rotate at 10 MB and keep 5 backups
+(~50 MB cap per scheduler). Log files are gitignored.
+
+To follow live output:
+   Get-Content scheduler_v2.log -Wait      (PowerShell)
+   tail -f scheduler_v2.log                (macOS / Linux)
+
+Verbosity is controlled by `logger.setLevel(...)` near the top of each
+scheduler. INFO is the default; switch to DEBUG for per-cycle "not due yet"
+chatter, or WARNING to see only problems.
 
 
 NOTES

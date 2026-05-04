@@ -4,13 +4,14 @@ get_seed_data_v2.py
 Builds the seed CSV for MAML v2 adaptation.
 v2 adds 8 per-region GDELT features (Middle East + Oil Producers).
 
-Output: dataset_maml_march1724_v2.csv  (23 features)
+Output: ../data/seed_v2.csv  (23 features)
 
 Run:
     python get_seed_data_v2.py
 """
 
 from gdelt_pipeline import main as run_pipeline, PipelineConfig
+from pathlib import Path
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -60,13 +61,17 @@ print("Step 1: Fetching GDELT data March 17-23 2026")
 print("=" * 60)
 
 cfg = PipelineConfig(
-    start_date     = "2026-03-17",
-    end_date       = "2026-03-23",
-    output_dir     = "seed_output_v2",
-    checkpoint_dir = "seed_output_v2/checkpoints",
-    final_output   = "seed_output_v2/political_events_gdelt.csv",
-    sp500_output   = "seed_output_v2/sp500_returns.csv",
-    log_file       = "seed_output_v2/pipeline.log",
+    start_date       = "2026-03-17",
+    end_date         = "2026-03-23",
+    output_dir       = "seed_output_v2",
+    checkpoint_dir   = "seed_output_v2/checkpoints",
+    final_output     = "seed_output_v2/political_events_gdelt.csv",
+    sp500_output     = "seed_output_v2/sp500_returns.csv",
+    log_file         = "seed_output_v2/pipeline.log",
+    # Keep the seed-script's split datasets out of ../data/ so we don't
+    # overwrite the full-range training files.
+    dataset_daily    = "seed_output_v2/political_events_gdelt_next_day_only.csv",
+    dataset_intraday = "seed_output_v2/political_events_gdelt_with_intraday.csv",
 )
 
 run_pipeline(cfg)
@@ -284,7 +289,8 @@ print("Step 6: Cleaning and saving")
 print("=" * 60)
 
 seed_clean = seed.dropna(subset=FEATURE_COLS + ['oil_fwd_rvol_4h'])
-output_path = "dataset_maml_march1724_v2.csv"
+Path("../data").mkdir(parents=True, exist_ok=True)
+output_path = "../data/seed_v2.csv"
 seed_clean.to_csv(output_path, index=False)
 
 print(f"\nSaved: {output_path}")

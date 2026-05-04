@@ -1,6 +1,6 @@
 """
 Scheduler — V2 (23 features)
-Background prediction loop. Every 30 min during OVX hours, computes a v2 prediction
+Background prediction loop. Every 1 hour during OVX hours, computes a v2 prediction
 (15 original features + 8 per-region GDELT aggregates). Writes to predictions_v2.db.
 
 Run from the live_deployment/ folder:
@@ -10,6 +10,8 @@ Run from the live_deployment/ folder:
 import time
 import sqlite3
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 import numpy as np
 import torch
 import torch.nn as nn
@@ -21,6 +23,25 @@ import yfinance as yf
 import pandas as pd
 from copy import deepcopy
 from datetime import datetime, timedelta
+
+
+# Logging setup: rotating file (10 MB × 5) + console mirror.
+# `*.log` files are .gitignored. Reset any prior handlers so re-imports
+# (e.g. under pytest) don't stack duplicate output.
+logger = logging.getLogger("scheduler_v2")
+logger.setLevel(logging.INFO)
+logger.propagate = False
+if not logger.handlers:
+    _fmt = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    _fh = RotatingFileHandler("scheduler_v2.log", maxBytes=10_000_000, backupCount=5)
+    _fh.setFormatter(_fmt)
+    _ch = logging.StreamHandler()
+    _ch.setFormatter(_fmt)
+    logger.addHandler(_fh)
+    logger.addHandler(_ch)
 
 # Model definition
 class OilVolatilityMLP(nn.Module):
@@ -68,8 +89,8 @@ plain_mlp = OilVolatilityMLP(input_dim=INPUT_DIM)
 plain_mlp.load_state_dict(torch.load('../../models/v2/mlp_pretrained_v2.pth', map_location='cpu'))
 plain_mlp.eval()
 
-print(f"Models loaded (v2, {INPUT_DIM} features). Scheduler running.")
-print(f"DB: {DB_PATH}")
+logger.info("Models loaded (v2, %d features). Scheduler running.", INPUT_DIM)
+logger.info("DB: %s", DB_PATH)
 
 
 # GDELT constants
@@ -202,7 +223,7 @@ def update_actuals():
     conn.commit()
     conn.close()
     if updated:
-        print(f"  Updated {updated} actuals")
+        logger.info("Updated %d actuals", updated)
 
 
 def get_support_set():
@@ -240,11 +261,11 @@ def get_support_set():
 
             sup_X = torch.tensor(scaler.transform(all_feat), dtype=torch.float32)
             sup_y = torch.tensor(np.log1p(all_act), dtype=torch.float32).unsqueeze(1)
-            print(f"  Support: {n_live} live + {n_seed} seeded")
+            logger.info("Support: %d live + %d seeded", n_live, n_seed)
             return (sup_X, sup_y), n_live + n_seed
 
         except Exception as e:
-            print(f"  Seed load failed: {e}")
+            logger.warning("Seed load failed: %s", e)
             if n_live < 3:
                 return None, 0
 
@@ -267,7 +288,7 @@ def should_predict() -> bool:
     if row is None:
         return True
     last = datetime.fromisoformat(str(row[0]))
-    return (datetime.utcnow() - last).total_seconds() > 1800
+    return (datetime.utcnow() - last).total_seconds() > 3600
 
 
 # Market data
@@ -277,7 +298,7 @@ def get_live_ovx():
         if ovx and ovx > 0:
             return float(ovx)
     except Exception as e:
-        print(f"  OVX spot fetch failed: {e}")
+        logger.warning("OVX spot fetch failed: %s", e)
     return None
 
 
@@ -303,7 +324,7 @@ def fetch_market():
                 if len(s) > 0:
                     data[col] = s
         except Exception as e:
-            print(f"  FAILED {ticker}: {e}")
+            logger.warning("FAILED %s: %s", ticker, e)
 
     if not data:
         return None
@@ -324,18 +345,21 @@ def fetch_market():
     latest = market.iloc[-1]
 
     if latest.isna().any():
-        print(f"  Still NaN after ffill — skipping")
+        logger.warning("Still NaN after ffill - skipping")
         return None
 
     live_ovx = get_live_ovx()
     if live_ovx:
         latest = latest.copy()
         latest['ovx_close'] = live_ovx
-        print(f"  Live OVX spot: {live_ovx:.2f}")
+        logger.info("Live OVX spot: %.2f", live_ovx)
 
-    print(f"  Market date: {market.index[-1].date()}  "
-          f"OVX={latest.get('ovx_close', 0):.1f}  "
-          f"Oil=${latest.get('oil_close', 0):.2f}")
+    logger.info(
+        "Market date: %s  OVX=%.1f  Oil=$%.2f",
+        market.index[-1].date(),
+        latest.get('ovx_close', 0),
+        latest.get('oil_close', 0),
+    )
     return latest.to_dict()
 
 
@@ -429,14 +453,17 @@ def fetch_gdelt() -> dict:
                 result[f'{prefix}_n_events']     = 0.0
                 result[f'{prefix}_tone_mean']    = -1.0
 
-        print(f"  GDELT: {int(result['n_events'])} events | "
-              f"ME: {int(result['me_n_events'])} | "
-              f"OI: {int(result['oi_n_events'])} | "
-              f"conflict: {result['gs_conflict_pct']*100:.0f}%")
+        logger.info(
+            "GDELT: %d events | ME: %d | OI: %d | conflict: %.0f%%",
+            int(result['n_events']),
+            int(result['me_n_events']),
+            int(result['oi_n_events']),
+            result['gs_conflict_pct'] * 100,
+        )
         return result
 
     except Exception as e:
-        print(f"  GDELT fetch error: {e} — using fallback")
+        logger.warning("GDELT fetch error: %s -- using fallback", e)
         return GDELT_FALLBACK
 
 
@@ -468,11 +495,11 @@ def compute_actual_vol(pred_utc):
 
 # Prediction
 def make_prediction():
-    print(f"\n[{datetime.utcnow().strftime('%H:%M:%S')} UTC] Making prediction (v2)...")
+    logger.info("Making prediction (v2)...")
 
     market = fetch_market()
     if market is None:
-        print("  Market data unavailable — skipping")
+        logger.warning("Market data unavailable - skipping")
         return
 
     gdelt = fetch_gdelt()
@@ -508,7 +535,7 @@ def make_prediction():
         f"Feature dim mismatch: {raw_X.shape[1]} vs {INPUT_DIM}"
 
     if np.isnan(raw_X).any():
-        print("  NaN in features — skipping")
+        logger.warning("NaN in features - skipping")
         return
 
     X_tensor = torch.tensor(scaler.transform(raw_X), dtype=torch.float32)
@@ -564,10 +591,13 @@ def make_prediction():
         gdelt_context = gdelt_context,
     )
 
-    print(f"  MAML: {maml_pred:.4f}  MLP: {mlp_pred:.4f}  "
-          f"OVX: {market.get('ovx_close', 0):.1f}  "
-          f"Support: {n_support}  "
-          f"ME_events: {int(gdelt['me_n_events'])}")
+    logger.info(
+        "MAML: %.4f  MLP: %.4f  OVX: %.1f  Support: %d  ME_events: %d",
+        maml_pred, mlp_pred,
+        market.get('ovx_close', 0),
+        n_support,
+        int(gdelt['me_n_events']),
+    )
 
 
 # OVX hours check
@@ -583,21 +613,19 @@ def is_ovx_calculating() -> bool:
 
 # Main loop
 init_db()
-print(f"Database ready: {DB_PATH}")
-print(f"Seed file: {SEED_PATH}")
-print("Predictions every 30 min. Actuals checked every 5 min.")
+logger.info("Database ready: %s", DB_PATH)
+logger.info("Seed file: %s", SEED_PATH)
+logger.info("Predictions every 1 hour. Actuals checked every 5 min.")
 
 while True:
     try:
         update_actuals()
         if not is_ovx_calculating():
-            print(f"[{datetime.utcnow().strftime('%H:%M:%S')} UTC] "
-                  f"Outside OVX hours — skipping prediction")
+            logger.debug("Outside OVX hours - skipping prediction")
         elif not should_predict():
-            print(f"[{datetime.utcnow().strftime('%H:%M:%S')} UTC] "
-                  f"Not due yet")
+            logger.debug("Not due yet")
         else:
             make_prediction()
-    except Exception as e:
-        print(f"Error in main loop: {e}")
+    except Exception:
+        logger.exception("Unhandled error in main loop")
     time.sleep(300)

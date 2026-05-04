@@ -46,6 +46,13 @@ class PipelineConfig:
     sp500_output:   str = "gdelt_output/sp500_returns.csv"
     log_file:       str = "gdelt_output/pipeline.log"
 
+    # Canonical split-dataset outputs. Defaults land in ../data/ so the rest
+    # of the pipeline (build_maml_dataset_*.py, training, evaluation) finds
+    # them without manual renames. The seed scripts override these to keep
+    # their intermediate outputs scoped to seed_output*/.
+    dataset_daily:    str = "../data/dataset_daily.csv"
+    dataset_intraday: str = "../data/dataset_intraday.csv"
+
     max_workers: int = 20
     batch_size:  int = 200
 
@@ -721,8 +728,10 @@ def save_split_datasets(
     intraday_cols = ["return_1h_next", "return_4h_next"]
     has_intraday  = all(c in df.columns for c in intraday_cols)
 
-    out_daily    = cfg.final_output.replace(".csv", "_next_day_only.csv")
-    out_intraday = cfg.final_output.replace(".csv", "_with_intraday.csv")
+    out_daily    = cfg.dataset_daily
+    out_intraday = cfg.dataset_intraday
+    Path(out_daily).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_intraday).parent.mkdir(parents=True, exist_ok=True)
 
     if has_intraday:
         intraday_mask = df["return_1h_next"].notna()
