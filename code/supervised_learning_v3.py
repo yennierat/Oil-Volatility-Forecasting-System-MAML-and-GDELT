@@ -20,7 +20,9 @@ warnings.filterwarnings('ignore')
 
 # Reproducibility
 SEED = 42
-random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
 torch.set_num_threads(8)
 
 # Step 1: Load & aggregate to daily
@@ -207,8 +209,8 @@ for fold in range(3):
         fm.train()
         for Xb, yb in fdl:
             fopt.zero_grad()
-            l = floss(fm(Xb), yb)
-            l.backward()
+            loss = floss(fm(Xb), yb)
+            loss.backward()
             nn.utils.clip_grad_norm_(fm.parameters(), 1.0)
             fopt.step()
         fm.eval()

@@ -1,0 +1,29 @@
+# Local dev environments
+.venv/
+.git/
+.github/
+.vscode/
+.idea/
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+
+# Project data and runtime artifacts (not needed for tests)
+data/
+*.db
+*.log
+seed_output/
+seed_output_v2/
+gdelt_output/
+eval_outputs_v1/
+eval_outputs_v2/
+
+# Misc
+.DS_Store
+.env
+.envrc
+README.txt

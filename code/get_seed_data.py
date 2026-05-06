@@ -9,6 +9,8 @@ from gdelt_pipeline import main as run_pipeline, PipelineConfig
 from pathlib import Path
 import pandas as pd
 import numpy as np
+import yfinance as yf
+from datetime import datetime, timedelta
 
 # Step 1: Run GDELT pipeline for March 17-23
 print("=" * 60)
@@ -47,9 +49,6 @@ print("Step 3: Building oil features")
 print("=" * 60)
 
 # Fix DXY ticker -- DX=F is delisted, use DX-Y.NYB
-import yfinance as yf
-from datetime import datetime, timedelta
-
 print("Downloading market data...")
 end   = datetime(2026, 3, 25)
 start = datetime(2026, 2, 15)  # buffer for rolling vols

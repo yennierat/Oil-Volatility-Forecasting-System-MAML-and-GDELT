@@ -753,7 +753,7 @@ def save_split_datasets(
         )
         print(f"\n  Dataset 1 (next_day_only)  : {len(df_daily):,} events  -> {out_daily}")
         print(f"  Dataset 2 (with_intraday)  : {len(df_intraday):,} events  -> {out_intraday}")
-        print(f"  No duplicate events between datasets (split on 1h return availability)")
+        print("  No duplicate events between datasets (split on 1h return availability)")
     else:
         # Hourly data unavailable — save everything as daily-only
         df.to_csv(out_daily, index=False)
@@ -762,7 +762,7 @@ def save_split_datasets(
             f"as next_day_only -> {out_daily}"
         )
         print(f"\n  Dataset 1 (next_day_only)  : {len(df):,} events  -> {out_daily}")
-        print(f"  Dataset 2 (with_intraday)  : skipped (hourly data unavailable)")
+        print("  Dataset 2 (with_intraday)  : skipped (hourly data unavailable)")
 
 
 def print_task_summary(df: pd.DataFrame, log: logging.Logger) -> None:
@@ -855,16 +855,16 @@ def print_task_summary(df: pd.DataFrame, log: logging.Logger) -> None:
         print()
         if ratio > 3.0:
             print(f"  [WARNING] Cooperative events are {ratio:.1f}x more than conflict.")
-            print(f"  MAML will under-train on conflict tasks.")
-            print(f"  Consider: weighted task sampling in your TaskSampler,")
-            print(f"  or note this explicitly in your methodology section.")
+            print("  MAML will under-train on conflict tasks.")
+            print("  Consider: weighted task sampling in your TaskSampler,")
+            print("  or note this explicitly in your methodology section.")
         elif ratio < (1 / 3.0):
             inv = 1 / ratio if ratio > 0 else float("inf")
             print(f"  [WARNING] Conflict events are {inv:.1f}x more than cooperative.")
-            print(f"  MAML will under-train on cooperative tasks.")
-            print(f"  Consider: weighted task sampling in your TaskSampler.")
+            print("  MAML will under-train on cooperative tasks.")
+            print("  Consider: weighted task sampling in your TaskSampler.")
         else:
-            print(f"  [OK] Balance within 3:1 threshold — no reweighting needed.")
+            print("  [OK] Balance within 3:1 threshold — no reweighting needed.")
     else:
         print("  [ERROR] No events with known task categories found.")
 
@@ -954,8 +954,8 @@ def main(cfg: Optional[PipelineConfig] = None) -> None:
     print(f"  Total snapshots: {n_snapshots:,}")
     print(f"  Checkpointed   : ~{done_snaps:,}")
     print(f"  Remaining      : ~{max(0, n_snapshots - done_snaps):,}")
-    print(f"\n  Estimated runtime: ~3-5 hours full run (M4 Pro, 20 workers)")
-    print(f"  Note: MPS GPU does NOT help — this is network I/O.")
+    print("\n  Estimated runtime: ~3-5 hours full run (M4 Pro, 20 workers)")
+    print("  Note: MPS GPU does NOT help — this is network I/O.")
 
     if not connectivity_check(log):
         print("Pipeline aborted — fix connectivity first.")

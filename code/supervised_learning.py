@@ -23,7 +23,9 @@ warnings.filterwarnings('ignore')
 
 # Reproducibility
 SEED = 42
-random.seed(SEED); np.random.seed(SEED); torch.manual_seed(SEED)
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
 torch.set_num_threads(8)
 
 # Step 1: Load data
@@ -176,8 +178,8 @@ for fold in range(3):
         fm.train()
         for Xb, yb in fdl:
             fopt.zero_grad()
-            l = floss(fm(Xb), yb)
-            l.backward()
+            loss = floss(fm(Xb), yb)
+            loss.backward()
             nn.utils.clip_grad_norm_(fm.parameters(), 1.0)
             fopt.step()
         fm.eval()
@@ -270,11 +272,11 @@ print(f"  MLP Option A:                   MAE = {mlp_mae:.5f}")
 print(f"\n  CV MAE mean: {np.mean(cv_maes):.5f} | Val MAE: {mlp_mae:.5f}")
 
 if mlp_mae < bl_ovx_mae:
-    print(f"\n  ✓ MLP beats OVX baseline — safe to use as MAML backbone")
+    print("\n  ✓ MLP beats OVX baseline — safe to use as MAML backbone")
 else:
-    print(f"\n  ✗ MLP does not beat OVX baseline")
-    print(f"    → The backbone will still transfer useful representations to MAML")
-    print(f"    → MAML fine-tuning may recover performance per task")
+    print("\n  ✗ MLP does not beat OVX baseline")
+    print("    → The backbone will still transfer useful representations to MAML")
+    print("    → MAML fine-tuning may recover performance per task")
 
 # Step 10: Save config for MAML
 config = {

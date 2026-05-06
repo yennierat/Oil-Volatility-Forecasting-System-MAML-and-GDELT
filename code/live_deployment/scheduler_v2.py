@@ -13,16 +13,17 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import joblib
 import requests
 import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import yfinance as yf
-import pandas as pd
 from copy import deepcopy
 from datetime import datetime, timedelta
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # Logging setup: rotating file (10 MB × 5) + console mirror.
@@ -365,7 +366,8 @@ def fetch_market():
 
 # GDELT fetcher (with per-region sub-aggregates)
 def fetch_gdelt() -> dict:
-    import zipfile, io
+    import zipfile
+    import io
     try:
         resp = requests.get(
             "http://data.gdeltproject.org/gdeltv2/lastupdate.txt",
@@ -612,20 +614,24 @@ def is_ovx_calculating() -> bool:
 
 
 # Main loop
-init_db()
-logger.info("Database ready: %s", DB_PATH)
-logger.info("Seed file: %s", SEED_PATH)
-logger.info("Predictions every 1 hour. Actuals checked every 5 min.")
+def main():
+    init_db()
+    logger.info("Database ready: %s", DB_PATH)
+    logger.info("Seed file: %s", SEED_PATH)
+    logger.info("Predictions every 1 hour. Actuals checked every 5 min.")
+    while True:
+        try:
+            update_actuals()
+            if not is_ovx_calculating():
+                logger.debug("Outside OVX hours - skipping prediction")
+            elif not should_predict():
+                logger.debug("Not due yet")
+            else:
+                make_prediction()
+        except Exception:
+            logger.exception("Unhandled error in main loop")
+        time.sleep(300)
 
-while True:
-    try:
-        update_actuals()
-        if not is_ovx_calculating():
-            logger.debug("Outside OVX hours - skipping prediction")
-        elif not should_predict():
-            logger.debug("Not due yet")
-        else:
-            make_prediction()
-    except Exception:
-        logger.exception("Unhandled error in main loop")
-    time.sleep(300)
+
+if __name__ == "__main__":
+    main()

@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 from copy import deepcopy
 from sklearn.metrics import mean_absolute_error
+from sklearn.preprocessing import StandardScaler
 import joblib
 from tqdm import tqdm
 
@@ -95,8 +96,6 @@ df = aggregate_to_daily(df)
 print(f"After aggregation: {len(df)} rows ({df['date'].nunique()} unique dates)")
 
 # 4. Refit scaler on train split
-from sklearn.preprocessing import StandardScaler
-
 train_only = df[df['split'] == 'train']
 scaler = StandardScaler()
 scaler.fit(train_only[FEATURE_COLS].values.astype(np.float32))
@@ -202,7 +201,7 @@ test_sampler  = MAMLTaskSampler(df, FEATURE_COLS, TARGET_COL, 'test')
 
 # 6. Quick sanity check
 sup_X, sup_y, qry_X, qry_y, task = train_sampler.sample_episode()
-print(f"\nSample episode:")
+print("\nSample episode:")
 print(f"  Task:      {task}")
 print(f"  Support X: {sup_X.shape}")
 print(f"  Query X:   {qry_X.shape}")

@@ -13,15 +13,17 @@ import json
 import logging
 from logging.handlers import RotatingFileHandler
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import joblib
 import requests
 import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import yfinance as yf
 from copy import deepcopy
 from datetime import datetime, timedelta
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # Logging setup: rotating file (10 MB × 5) + console mirror.
@@ -210,7 +212,6 @@ def fetch_market():
     if not data:
         return None
 
-    import pandas as pd
     market = pd.DataFrame(data).ffill().bfill()
     market.index = pd.to_datetime(market.index)
 
@@ -323,7 +324,8 @@ GDELT_FALLBACK = {
 
 
 def fetch_gdelt():
-    import zipfile, io
+    import zipfile
+    import io
     try:
         resp = requests.get(
             "http://data.gdeltproject.org/gdeltv2/lastupdate.txt",
@@ -519,7 +521,6 @@ def make_prediction():
 
 
 # Market hours check
-import pytz
 
 def is_ovx_calculating() -> bool:
     """
@@ -540,21 +541,23 @@ def is_ovx_calculating() -> bool:
 
 
 # Main loop
-import pandas as pd
+def main():
+    init_db()
+    logger.info("Database ready. Checking every 5 minutes.")
+    logger.info("Predictions every 1 hour during market hours. Actuals checked each cycle.")
+    while True:
+        try:
+            update_actuals()
+            if not is_ovx_calculating():
+                logger.debug("US market closed -- OVX not updating, skipping prediction")
+            elif not should_predict():
+                logger.debug("Next prediction not due yet")
+            else:
+                make_prediction()
+        except Exception:
+            logger.exception("Unhandled error in main loop")
+        time.sleep(300)   # check every 5 minutes
 
-init_db()
-logger.info("Database ready. Checking every 5 minutes.")
-logger.info("Predictions every 1 hour during market hours. Actuals checked each cycle.")
 
-while True:
-    try:
-        update_actuals()
-        if not is_ovx_calculating():
-            logger.debug("US market closed -- OVX not updating, skipping prediction")
-        elif not should_predict():
-            logger.debug("Next prediction not due yet")
-        else:
-            make_prediction()
-    except Exception:
-        logger.exception("Unhandled error in main loop")
-    time.sleep(300)   # check every 5 minutes
+if __name__ == "__main__":
+    main()

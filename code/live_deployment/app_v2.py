@@ -16,10 +16,11 @@ from datetime import datetime, timedelta
 import joblib
 import requests
 import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import yfinance as yf
 import sqlite3
 import json
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Page config
 st.set_page_config(
@@ -213,7 +214,8 @@ def get_task_category(event_code: str) -> str:
 # Fetch GDELT events (with per-region sub-aggregates)
 @st.cache_data(ttl=900)
 def fetch_gdelt_events_cached(hours_back=24):
-    import zipfile, io
+    import zipfile
+    import io
 
     resp = requests.get(
         "http://data.gdeltproject.org/gdeltv2/lastupdate.txt",

@@ -148,7 +148,7 @@ train_only = df[df['split'] == 'train']
 scaler = StandardScaler()
 scaler.fit(train_only[FEATURE_COLS].values.astype(np.float32))
 joblib.dump(scaler, '../models/v2/feature_scaler_v2.pkl')
-print(f"\nScaler saved → ../models/v2/feature_scaler_v2.pkl")
+print("\nScaler saved → ../models/v2/feature_scaler_v2.pkl")
 print(f"  OVX — mean={scaler.mean_[0]:.1f}  std={scaler.scale_[0]:.1f}")
 print(f"  me_gs_mean index={FEATURE_COLS.index('me_gs_mean')} "
       f"mean={scaler.mean_[FEATURE_COLS.index('me_gs_mean')]:.3f}")
@@ -183,7 +183,7 @@ class OilVolatilityMLP(nn.Module):
 model = OilVolatilityMLP(input_dim=INPUT_DIM)
 state = torch.load('../models/v2/mlp_pretrained_v2.pth', map_location='cpu')
 model.load_state_dict(state)
-print(f"\nLoaded ../models/v2/mlp_pretrained_v2.pth")
+print("\nLoaded ../models/v2/mlp_pretrained_v2.pth")
 print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
 # 6. Task sampler
@@ -270,7 +270,7 @@ test_sampler  = MAMLTaskSampler(df, FEATURE_COLS, TARGET_COL, 'test')
 
 # Sanity check
 sup_X, sup_y, qry_X, qry_y, task = train_sampler.sample_episode()
-print(f"\nSample episode:")
+print("\nSample episode:")
 print(f"  Task:           {task}")
 print(f"  Support X:      {sup_X.shape}  (expected: [5, 23])")
 print(f"  Query X:        {qry_X.shape}  (expected: [3, 23])")
@@ -372,11 +372,11 @@ for epoch in tqdm(range(META_EPOCHS), desc="MAML Training"):
                        f"Best: {best_meta_loss:.5f}")
 
 print(f"\nTraining complete. Best val loss: {best_meta_loss:.5f}")
-print(f"Weights saved → ../models/v2/maml_trained_v2.pth")
+print("Weights saved → ../models/v2/maml_trained_v2.pth")
 
 # 9. Evaluate per task
 print(f"\n{'='*60}")
-print(f"  Evaluating on test set...")
+print("  Evaluating on test set...")
 print(f"{'='*60}")
 
 model.load_state_dict(torch.load('../models/v2/maml_trained_v2.pth', map_location='cpu'))

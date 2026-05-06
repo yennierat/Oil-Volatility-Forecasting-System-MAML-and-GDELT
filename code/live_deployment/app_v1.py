@@ -19,9 +19,11 @@ from datetime import datetime, timedelta
 import joblib
 import requests
 import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import yfinance as yf
-import os
+import sqlite3
+import json
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # Page config
 st.set_page_config(
@@ -232,7 +234,8 @@ def get_task_category(event_code: str) -> str:
 
 @st.cache_data(ttl=900)
 def fetch_gdelt_events_cached(hours_back=24):
-    import zipfile, io
+    import zipfile
+    import io
 
     resp = requests.get(
         "http://data.gdeltproject.org/gdeltv2/lastupdate.txt",
@@ -400,9 +403,6 @@ def compute_realized_4h_vol(market_df, pred_utc):
 
 
 # Database (SQLite)
-import sqlite3
-import json
-
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""

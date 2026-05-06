@@ -471,8 +471,10 @@ def per_task_dm(all_runs, label):
         gar_p  = np.concatenate(r['garch_preds'])
         _, p_mlp   = diebold_mariano(actual, maml_p, mlp_p)
         _, p_garch = diebold_mariano(actual, maml_p, gar_p)
-        if p_mlp   < 0.05: sig_mlp   += 1
-        if p_garch < 0.05: sig_garch += 1
+        if p_mlp < 0.05:
+            sig_mlp += 1
+        if p_garch < 0.05:
+            sig_garch += 1
         marker_m = "**" if p_mlp   < 0.05 else "  "
         marker_g = "**" if p_garch < 0.05 else "  "
         print(f"  {task:<45} {p_mlp:>11.3f}{marker_m} {p_garch:>12.3f}{marker_g}")

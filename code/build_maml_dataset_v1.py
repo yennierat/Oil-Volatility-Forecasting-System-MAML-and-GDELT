@@ -251,7 +251,7 @@ def merge_with_oil(
 
     # Hourly oil merge for oil_fwd_rvol_4h
     if oil_hourly is not None and not oil_hourly.empty:
-        print(f"    Merging hourly oil for oil_fwd_rvol_4h...")
+        print("    Merging hourly oil for oil_fwd_rvol_4h...")
 
         # Check if event_datetime has real time component from v3 fetcher
         has_time = False
@@ -268,7 +268,7 @@ def merge_with_oil(
             merged["event_datetime"] = pd.to_datetime(
                 merged["event_datetime"], errors="coerce"
             )
-            print(f"    Using event_datetime from v3 fetcher  ✓")
+            print("    Using event_datetime from v3 fetcher  ✓")
         elif "snapshot_hour" in merged.columns:
             merged["event_datetime"] = (
                 pd.to_datetime(merged["date"])
@@ -278,10 +278,10 @@ def merge_with_oil(
                     ).fillna(12).astype(int), unit="h"
                 )
             )
-            print(f"    Using snapshot_hour fallback")
+            print("    Using snapshot_hour fallback")
         else:
             merged["event_datetime"] = pd.to_datetime(merged["date"])
-            print(f"    WARNING: No sub-daily timestamps")
+            print("    WARNING: No sub-daily timestamps")
 
         hcols = [
             "bar_datetime", "oil_fwd_rvol_4h",
@@ -348,7 +348,7 @@ def add_maml_structure(df: pd.DataFrame, label: str) -> pd.DataFrame:
     df.loc[df["date"] >= VAL_START,  "split"] = "val"
     df.loc[df["date"] >= TEST_START, "split"] = "test"
 
-    print(f"\n    Splits:")
+    print("\n    Splits:")
     for split in ["train", "val", "test"]:
         sub = df[df["split"] == split]
         if len(sub):
@@ -418,7 +418,7 @@ def write_summary(datasets: list, path: str) -> None:
             "oil_vol_5d", "oil_vol_20d", "vix_close", "ovx_close",
             "gold_oil_ratio", "dxy_close", "oil_close",
         ]]
-        lines += ["", f"  Feature columns:", f"    {feats}"]
+        lines += ["", "  Feature columns:", f"    {feats}"]
 
     text = "\n".join(lines)
     with open(path, "w") as f:
@@ -486,11 +486,11 @@ def main():
     )
 
     print(f"\n{'='*70}")
-    print(f"  DONE")
-    print(f"  1. Train MLP on dataset_maml_daily.csv")
-    print(f"     Target: oil_fwd_rvol_1d")
-    print(f"  2. Train MAML on dataset_maml_intraday.csv")
-    print(f"     Target: oil_fwd_rvol_4h")
+    print("  DONE")
+    print("  1. Train MLP on dataset_maml_daily.csv")
+    print("     Target: oil_fwd_rvol_1d")
+    print("  2. Train MAML on dataset_maml_intraday.csv")
+    print("     Target: oil_fwd_rvol_4h")
     print(f"{'='*70}")
 
 
