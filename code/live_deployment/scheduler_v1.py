@@ -336,7 +336,6 @@ def fetch_gdelt():
         r2 = requests.get(export_url, timeout=30, verify=False)
         with zipfile.ZipFile(io.BytesIO(r2.content)) as z:
             with z.open(z.namelist()[0]) as f:
-                import pandas as pd
                 raw = pd.read_csv(f, sep='\t', header=None,
                                   on_bad_lines='skip', low_memory=False)
 
@@ -476,9 +475,9 @@ def make_prediction():
         sup_X, sup_y = support
         adapted   = deepcopy(maml_model)
         optimizer = torch.optim.SGD(
-            adapted.parameters(), lr=0.005)
-        adapted.train()
-        for _ in range(10):
+            adapted.parameters(), lr=0.01)
+        adapted.eval()
+        for _ in range(5):
             optimizer.zero_grad()
             loss = loss_fn(adapted(sup_X), sup_y)
             loss.backward()

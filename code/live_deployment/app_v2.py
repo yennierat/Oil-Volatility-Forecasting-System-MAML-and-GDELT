@@ -521,8 +521,8 @@ def predict_adapted(model, X_tensor, support=None, inner_steps=10):
     sup_X, sup_y = support
     adapted   = deepcopy(model)
     loss_fn   = nn.HuberLoss(delta=0.5)
-    optimizer = torch.optim.SGD(adapted.parameters(), lr=0.005)
-    adapted.train()
+    optimizer = torch.optim.SGD(adapted.parameters(), lr=0.01)
+    adapted.eval()
     for _ in range(inner_steps):
         optimizer.zero_grad()
         loss = loss_fn(adapted(sup_X), sup_y)
@@ -677,7 +677,7 @@ with torch.no_grad():
 
 support, n_live, n_seed = get_live_support_set()
 n_support = n_live + n_seed
-maml_pred = predict_adapted(maml_model, X_tensor, support=support, inner_steps=10)
+maml_pred = predict_adapted(maml_model, X_tensor, support=support, inner_steps=5)
 
 st.markdown("Values below are **model predictions** — not yet verified against actuals")
 p1, p2, p3, p4 = st.columns(4)

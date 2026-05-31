@@ -554,9 +554,9 @@ def make_prediction():
     if support is not None:
         sup_X, sup_y = support
         adapted   = deepcopy(maml_model)
-        optimizer = torch.optim.SGD(adapted.parameters(), lr=0.005)
-        adapted.train()
-        for _ in range(10):
+        optimizer = torch.optim.SGD(adapted.parameters(), lr=0.01)
+        adapted.eval()
+        for _ in range(5):
             optimizer.zero_grad()
             loss = loss_fn(adapted(sup_X), sup_y)
             loss.backward()
