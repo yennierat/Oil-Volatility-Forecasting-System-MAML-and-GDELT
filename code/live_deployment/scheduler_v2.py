@@ -472,20 +472,20 @@ def fetch_gdelt() -> dict:
 # Realized vol
 def compute_actual_vol(pred_utc):
     try:
+        import pytz
         pred_hour = pred_utc.replace(minute=0, second=0, microsecond=0)
-        start = (pred_hour - timedelta(days=1)).strftime('%Y-%m-%d')
-        end   = (pred_hour + timedelta(days=2)).strftime('%Y-%m-%d')
-        h = yf.download('CL=F', start=start, end=end,
+        pred_hour_utc = pytz.utc.localize(pred_hour)
+        h = yf.download('CL=F', period='5d',
                         interval='1h', progress=False, auto_adjust=True)
         if h.empty or len(h) < 4:
             return None
         if isinstance(h.columns, pd.MultiIndex):
             h.columns = [c[0] for c in h.columns]
         h.index = pd.to_datetime(h.index)
-        if h.index.tz is not None:
-            h.index = h.index.tz_localize(None)
+        if h.index.tz is None:
+            h.index = h.index.tz_localize('UTC')
         h = h.sort_index()
-        mask = (h.index >= pred_hour) & (h.index <= pred_hour + timedelta(hours=4))
+        mask = (h.index >= pred_hour_utc) & (h.index <= pred_hour_utc + timedelta(hours=4))
         h4   = h[mask]
         if len(h4) < 2:
             return None
