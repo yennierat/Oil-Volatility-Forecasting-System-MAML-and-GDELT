@@ -833,6 +833,101 @@ with st.expander("Feature Vector (debug)"):
         'Scaled Value' : scaled_X[0],
     }), use_container_width=True)
 
+# ── Paper Trading Dashboard ───────────────────────────────────────────────────
+st.markdown("---")
+st.subheader("Paper Trading Dashboard (Straddle Strategy)")
+st.caption(
+    "BUY straddle when MAML predicted vol > 75th percentile of resolved actuals "
+    "(vol spike expected).  "
+    "SELL straddle when MAML predicted vol < 25th percentile "
+    "(vol expected to stay low).  "
+    "Trade size = 2% of current capital.  "
+    "Starting capital: $100,000."
+)
+
+INITIAL_CAPITAL_APP = 100_000.0
+
+
+@st.cache_data(ttl=300)
+def load_trade_log():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        df = pd.read_sql_query("""
+            SELECT timestamp, maml_pred, actual_rvol,
+                   trade_direction, trade_size, trade_pnl
+            FROM predictions
+            WHERE trade_direction IS NOT NULL
+            ORDER BY timestamp ASC
+        """, conn)
+        conn.close()
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+trades = load_trade_log()
+
+if trades.empty:
+    st.info("No trades placed yet. Trades are placed automatically by the scheduler when predictions fall outside the 25th–75th percentile range.")
+else:
+    resolved_trades = trades.dropna(subset=['trade_pnl'])
+
+    # Key metrics
+    total_pnl    = resolved_trades['trade_pnl'].sum() if not resolved_trades.empty else 0.0
+    current_cap  = INITIAL_CAPITAL_APP + total_pnl
+    n_trades     = len(resolved_trades)
+    win_rate     = (resolved_trades['trade_pnl'] > 0).mean() * 100 if n_trades > 0 else 0.0
+
+    if n_trades >= 2:
+        daily_pnl = resolved_trades.set_index('timestamp')['trade_pnl'].resample('D').sum().dropna()
+        sharpe = (daily_pnl.mean() / daily_pnl.std() * np.sqrt(252)) if daily_pnl.std() > 0 else 0.0
+    else:
+        sharpe = 0.0
+
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Current Capital", f"${current_cap:,.0f}",
+              delta=f"${total_pnl:+,.0f} total P&L")
+    m2.metric("Total P&L", f"${total_pnl:+,.0f}")
+    m3.metric("Win Rate", f"{win_rate:.1f}%")
+    m4.metric("Total Trades", n_trades)
+    m5.metric("Sharpe Ratio", f"{sharpe:.2f}")
+
+    pt1, pt2, pt3 = st.tabs(["Cumulative P&L", "Trade P&L", "Trade Log"])
+
+    with pt1:
+        if not resolved_trades.empty:
+            cum = resolved_trades.set_index('timestamp')['trade_pnl'].cumsum()
+            cum_df = pd.DataFrame({'Cumulative P&L ($)': cum})
+            st.line_chart(cum_df, use_container_width=True)
+            st.caption("Rising line = strategy is profitable. Drawdown periods show losing streaks.")
+
+    with pt2:
+        if not resolved_trades.empty:
+            bar_df = resolved_trades.set_index('timestamp')[['trade_pnl']].copy()
+            bar_df.columns = ['Trade P&L ($)']
+            st.bar_chart(bar_df, use_container_width=True)
+            st.caption("Green bars = winning trades. Red bars = losing trades.")
+
+    with pt3:
+        if not resolved_trades.empty:
+            tlog = resolved_trades[['timestamp', 'maml_pred', 'actual_rvol',
+                                    'trade_direction', 'trade_size', 'trade_pnl']].copy()
+            tlog.columns = ['Timestamp (UTC)', 'Predicted Vol (MAML)',
+                            'Actual Vol', 'Direction', 'Trade Size ($)', 'P&L ($)']
+            st.dataframe(
+                tlog.sort_values('Timestamp (UTC)', ascending=False).round(4),
+                use_container_width=True
+            )
+
+    pending_trades = trades[trades['trade_pnl'].isna()]
+    if not pending_trades.empty:
+        st.markdown(f"**⏳ {len(pending_trades)} open trade(s) awaiting resolution**")
+        open_df = pending_trades[['timestamp', 'maml_pred', 'trade_direction', 'trade_size']].copy()
+        open_df.columns = ['Timestamp (UTC)', 'Predicted Vol (MAML)', 'Direction', 'Trade Size ($)']
+        st.dataframe(open_df.sort_values('Timestamp (UTC)', ascending=False).round(4),
+                     use_container_width=True)
+
 st.markdown("---")
 st.caption(
     f"Last refresh: {now_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC | "

@@ -168,37 +168,100 @@ GDELT_FALLBACK = {
 
 
 # Database
+INITIAL_CAPITAL = 100_000.0   # starting paper-trading capital (USD)
+TRADE_RISK_PCT  = 0.02         # risk 2% of current capital per trade
+
+
 def init_db():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS predictions (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp     TEXT NOT NULL,
-            maml_pred     REAL,
-            mlp_pred      REAL,
-            oil_close     REAL,
-            ovx_close     REAL,
-            actual_rvol   REAL,
-            n_support     INTEGER,
-            gdelt_source  TEXT,
-            features_json TEXT,
-            gdelt_context TEXT
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp       TEXT NOT NULL,
+            maml_pred       REAL,
+            mlp_pred        REAL,
+            oil_close       REAL,
+            ovx_close       REAL,
+            actual_rvol     REAL,
+            n_support       INTEGER,
+            gdelt_source    TEXT,
+            features_json   TEXT,
+            gdelt_context   TEXT,
+            trade_direction TEXT,
+            trade_size      REAL,
+            trade_pnl       REAL
         )
     """)
+    # Migrate older DBs created before trade columns existed.
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(predictions)").fetchall()]
+    for col, typ in [("trade_direction", "TEXT"), ("trade_size", "REAL"), ("trade_pnl", "REAL")]:
+        if col not in cols:
+            conn.execute(f"ALTER TABLE predictions ADD COLUMN {col} {typ}")
     conn.commit()
     conn.close()
 
 
+def get_current_capital():
+    """Current paper capital = INITIAL_CAPITAL + sum of all resolved P&Ls."""
+    conn = sqlite3.connect(DB_PATH)
+    row = conn.execute(
+        "SELECT COALESCE(SUM(trade_pnl), 0) FROM predictions WHERE trade_pnl IS NOT NULL"
+    ).fetchone()
+    conn.close()
+    return INITIAL_CAPITAL + row[0]
+
+
+def get_vol_thresholds():
+    """Return (p25, p75) of resolved actual_rvol from the DB.
+    Falls back to (0.2, 0.5) if fewer than 100 resolved predictions exist."""
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        "SELECT actual_rvol FROM predictions WHERE actual_rvol IS NOT NULL"
+    ).fetchall()
+    conn.close()
+    if len(rows) < 100:
+        return 0.2, 0.5
+    vals = sorted(r[0] for r in rows)
+    n = len(vals)
+    return vals[int(n * 0.25)], vals[int(n * 0.75)]
+
+
+def get_trade_direction(maml_pred):
+    """Return 'BUY', 'SELL', or None based on predicted vol vs DB thresholds."""
+    p25, p75 = get_vol_thresholds()
+    if maml_pred > p75:
+        return 'BUY'
+    if maml_pred < p25:
+        return 'SELL'
+    return None
+
+
+def compute_trade_pnl(trade_direction, maml_pred, actual_rvol, trade_size):
+    """Simple straddle P&L model (paper trading).
+    BUY straddle: profit when actual > predicted (vol spike).
+        P&L = trade_size * (actual/predicted - 1), capped at -trade_size.
+    SELL straddle: profit when actual < predicted (vol stays low).
+        P&L = trade_size * (1 - actual/predicted), capped at -2*trade_size."""
+    if trade_direction is None or maml_pred <= 0 or trade_size is None:
+        return None
+    ratio = actual_rvol / maml_pred
+    if trade_direction == 'BUY':
+        return max(trade_size * (ratio - 1), -trade_size)
+    return max(trade_size * (1 - ratio), -2 * trade_size)
+
+
 def log_prediction(ts, maml_pred, mlp_pred, oil_close, ovx_close,
-                   n_support, features, gdelt_context=''):
+                   n_support, features, gdelt_context='',
+                   trade_direction=None, trade_size=None):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("""
         INSERT INTO predictions
         (timestamp, maml_pred, mlp_pred, oil_close, ovx_close,
-         n_support, features_json, gdelt_context)
-        VALUES (?,?,?,?,?,?,?,?)
+         n_support, features_json, gdelt_context, trade_direction, trade_size)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
     """, (str(ts), maml_pred, mlp_pred, oil_close, ovx_close,
-          n_support, json.dumps(features), gdelt_context))
+          n_support, json.dumps(features), gdelt_context,
+          trade_direction, trade_size))
     conn.commit()
     conn.close()
 
@@ -206,20 +269,27 @@ def log_prediction(ts, maml_pred, mlp_pred, oil_close, ovx_close,
 def update_actuals():
     conn    = sqlite3.connect(DB_PATH)
     rows    = conn.execute("""
-        SELECT id, timestamp FROM predictions WHERE actual_rvol IS NULL
+        SELECT id, timestamp, maml_pred, trade_direction, trade_size
+        FROM predictions WHERE actual_rvol IS NULL
     """).fetchall()
     now     = datetime.utcnow()
     updated = 0
-    for row_id, ts in rows:
+    for row_id, ts, maml_pred, trade_direction, trade_size in rows:
         pred_time = datetime.fromisoformat(str(ts))
         if now < pred_time + timedelta(hours=4):
             continue
         actual = compute_actual_vol(pred_time)
         if actual is not None:
+            pnl = compute_trade_pnl(trade_direction, maml_pred, actual, trade_size)
             conn.execute(
-                "UPDATE predictions SET actual_rvol=? WHERE id=?",
-                (actual, row_id)
+                "UPDATE predictions SET actual_rvol=?, trade_pnl=? WHERE id=?",
+                (actual, pnl, row_id)
             )
+            if pnl is not None:
+                logger.info(
+                    "Trade resolved: %s  pred=%.4f actual=%.4f  P&L=$%.2f",
+                    trade_direction, maml_pred, actual, pnl
+                )
             updated += 1
     conn.commit()
     conn.close()
@@ -570,6 +640,10 @@ def make_prediction():
             maml_pred = float(np.expm1(maml_model(X_tensor).item()))
         n_support = 0
 
+    # Paper trading: determine trade direction + size at prediction time.
+    trade_direction = get_trade_direction(maml_pred)
+    trade_size      = TRADE_RISK_PCT * get_current_capital() if trade_direction else None
+
     # Build features dict in FEATURE_COLS order for DB storage
     features_dict = {col: float(raw_X[0][i]) for i, col in enumerate(FEATURE_COLS)}
 
@@ -583,22 +657,27 @@ def make_prediction():
     )
 
     log_prediction(
-        ts            = now_utc,
-        maml_pred     = maml_pred,
-        mlp_pred      = mlp_pred,
-        oil_close     = float(market.get('oil_close', 0)),
-        ovx_close     = float(market.get('ovx_close', 0)),
-        n_support     = n_support,
-        features      = features_dict,
-        gdelt_context = gdelt_context,
+        ts              = now_utc,
+        maml_pred       = maml_pred,
+        mlp_pred        = mlp_pred,
+        oil_close       = float(market.get('oil_close', 0)),
+        ovx_close       = float(market.get('ovx_close', 0)),
+        n_support       = n_support,
+        features        = features_dict,
+        gdelt_context   = gdelt_context,
+        trade_direction = trade_direction,
+        trade_size      = trade_size,
     )
 
+    capital = get_current_capital()
     logger.info(
-        "MAML: %.4f  MLP: %.4f  OVX: %.1f  Support: %d  ME_events: %d",
+        "MAML: %.4f  MLP: %.4f  OVX: %.1f  Support: %d  ME_events: %d  "
+        "Trade: %s (size=$%.0f)  Capital: $%.0f",
         maml_pred, mlp_pred,
         market.get('ovx_close', 0),
         n_support,
         int(gdelt['me_n_events']),
+        trade_direction or 'NONE', trade_size or 0, capital,
     )
 
 
@@ -608,7 +687,13 @@ def is_ovx_calculating() -> bool:
     if now_utc.weekday() >= 5:
         return False
     minutes = now_utc.hour * 60 + now_utc.minute
+    # 15-min break at 02:15-02:30 UTC only.
     if 135 <= minutes <= 150:
+        return False
+    # Friday cutoff: market closes at 22:00 UTC, latest hourly oil bar is 21:00.
+    # Last valid prediction window is 18:00-19:00 UTC (prediction at < 19:00 UTC)
+    # so that the 4h realized vol window (19:00-23:00) still has enough price bars.
+    if now_utc.weekday() == 4 and minutes >= 19 * 60:  # Friday 19:00+ UTC
         return False
     return True
 
