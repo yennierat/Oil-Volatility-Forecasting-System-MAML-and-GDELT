@@ -555,11 +555,13 @@ def compute_actual_vol(pred_utc):
         if h.index.tz is None:
             h.index = h.index.tz_localize('UTC')
         h = h.sort_index()
-        mask = (h.index >= pred_hour_utc) & (h.index <= pred_hour_utc + timedelta(hours=4))
+        # Strictly exclude the bar at pred_hour (matches training: shift(-k) for k in 1..4).
+        # Use pct_change() not log returns — matches training pipeline.
+        mask = (h.index > pred_hour_utc) & (h.index <= pred_hour_utc + timedelta(hours=4))
         h4   = h[mask]
         if len(h4) < 2:
             return None
-        rets = np.log(h4['Close'] / h4['Close'].shift(1)).dropna()
+        rets = h4['Close'].pct_change().dropna()
         return float(rets.std(ddof=1) * np.sqrt(252 * 23))
     except Exception:
         return None
