@@ -152,17 +152,18 @@ def get_trade_direction(maml_pred):
 
 
 def compute_trade_pnl(trade_direction, maml_pred, actual_rvol, trade_size):
-    """Simple straddle P&L model (paper trading).
+    """Straddle P&L model with 20% premium entry cost (paper trading).
     BUY straddle: profit when actual > predicted (vol spike).
-        P&L = trade_size * (actual/predicted - 1), capped at -trade_size.
+        P&L = trade_size * (actual/predicted - 1) - premium, capped at -trade_size.
     SELL straddle: profit when actual < predicted (vol stays low).
-        P&L = trade_size * (1 - actual/predicted), capped at -2*trade_size."""
+        P&L = trade_size * (1 - actual/predicted) - premium, capped at -2*trade_size."""
     if trade_direction is None or maml_pred <= 0 or trade_size is None:
         return None
+    premium = 0.20 * maml_pred * trade_size
     ratio = actual_rvol / maml_pred
     if trade_direction == 'BUY':
-        return max(trade_size * (ratio - 1), -trade_size)
-    return max(trade_size * (1 - ratio), -2 * trade_size)
+        return max(trade_size * (ratio - 1) - premium, -trade_size)
+    return max(trade_size * (1 - ratio) - premium, -2 * trade_size)
 
 
 def log_prediction(ts, maml_pred, mlp_pred,
