@@ -93,6 +93,10 @@ plain_mlp.eval()
 logger.info("Models loaded (v2, %d features). Scheduler running.", INPUT_DIM)
 logger.info("DB: %s", DB_PATH)
 
+# Bias correction: MAML trains in log-space so expm1(E[log1p(Y)]) < E[Y]
+# (Jensen's inequality). Value measured on the full training split via backtest.
+BIAS_CORRECTION = 0.0752
+
 
 # GDELT constants
 HIGH_IMPACT_COUNTRIES = frozenset({
@@ -635,11 +639,11 @@ def make_prediction():
             optimizer.step()
         adapted.eval()
         with torch.no_grad():
-            maml_pred = float(np.expm1(adapted(X_tensor).item()))
+            maml_pred = float(np.expm1(adapted(X_tensor).item())) + BIAS_CORRECTION
     else:
         maml_model.eval()
         with torch.no_grad():
-            maml_pred = float(np.expm1(maml_model(X_tensor).item()))
+            maml_pred = float(np.expm1(maml_model(X_tensor).item())) + BIAS_CORRECTION
         n_support = 0
 
     # Paper trading: determine trade direction + size at prediction time.

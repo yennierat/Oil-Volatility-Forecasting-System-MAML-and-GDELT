@@ -77,6 +77,10 @@ plain_mlp.load_state_dict(
 plain_mlp.eval()
 logger.info("Models loaded. Scheduler running.")
 
+# Bias correction: MAML trains in log-space so expm1(E[log1p(Y)]) < E[Y]
+# (Jensen's inequality). Value measured on the full training split via backtest.
+BIAS_CORRECTION = 0.0752
+
 
 # Database helpers
 INITIAL_CAPITAL = 100_000.0   # starting paper-trading capital (USD)
@@ -556,12 +560,11 @@ def make_prediction():
             optimizer.step()
         adapted.eval()
         with torch.no_grad():
-            maml_pred = float(np.expm1(adapted(X_tensor).item()))
+            maml_pred = float(np.expm1(adapted(X_tensor).item())) + BIAS_CORRECTION
     else:
         maml_model.eval()
         with torch.no_grad():
-            maml_pred = float(
-                np.expm1(maml_model(X_tensor).item()))
+            maml_pred = float(np.expm1(maml_model(X_tensor).item())) + BIAS_CORRECTION
 
     # Paper trading: determine trade direction + size at prediction time.
     trade_direction = get_trade_direction(maml_pred)
